@@ -1,0 +1,41 @@
+{
+  "contact": {
+    "first_name": "",
+    "last_name": "",
+    "email": "",
+    "phone": "",
+    "linkedin_url": "",
+    "city": "",
+    "state": "",
+    "zip": "",
+    "country": "United States"
+  },
+  "demographics": {
+    "work_authorization": "",
+    "sponsorship_required": "",
+    "veteran_status": "",
+    "gender": "",
+    "race_ethnicity": "",
+    "disability": ""
+  },
+  "education": [
+    {
+      "institution": "",
+      "degree": "",
+      "field": "",
+      "graduation_year": ""
+    }
+  ],
+  "work_history": [
+    {
+      "company": "",
+      "title": "",
+      "start_date": "",
+      "end_date": "",
+      "current": false,
+      "description": ""
+    }
+  ],
+  "answer_rules": [],
+  "always_ask": []
+}

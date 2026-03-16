@@ -1,0 +1,29 @@
+{
+  "chrome_profile_path": "D:\\GitProjects\\ats-application-agent\\.chrome-profile",
+  "obsidian_output_path": "D:\\Obsidian Notes\\Notes\\Job Seeking\\Auto App",
+  "tasks_directory": "tasks",
+  "profile_path": "profile.json",
+  "agents_directory": "agents",
+  "skills_directory": "skills",
+  "browser": {
+    "channel": "chrome",
+    "headless": false,
+    "start_minimized": true,
+    "launch_method": "launch_persistent_context",
+    "note": "Playwright must use launch_persistent_context with user_data_dir pointed at chrome_profile_path. Do not use browser.launch() or browser.new_context() — those create ephemeral profiles without saved cookies/sessions."
+  },
+  "url_classification": {
+    "job_listing_domains": ["indeed.com", "ziprecruiter.com", "linkedin.com", "lever.co", "boards.greenhouse.io"],
+    "resume_view_pattern": "docs.google.com/document/d/",
+    "resume_download_pattern": "docs.google.com/document/export",
+    "note": "Intake agent uses these patterns to classify URLs extracted from email PDFs. Add new job board domains here as they appear."
+  },
+  "pacing": {
+    "submission_delay_seconds": 60,
+    "domain_overrides": {
+      "myworkdayjobs.com": 120
+    },
+    "note": "Minimum wait time between application agent invocations. Domain overrides apply when consecutive jobs target the same ATS domain."
+  },
+  "subagent_timeout_seconds": 600
+}
