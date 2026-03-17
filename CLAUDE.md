@@ -96,7 +96,7 @@ Process an email PDF — runs intake, scouts all application pages, and produces
    |---|---------|------|--------|
    | 1 | ... | ... | awaiting_answers / auth_required / listing_expired / sso_apply_only |
    ```
-   If any jobs need auth, update `launch-browser.bat` to open Chrome with the blocked URLs:
+   If any jobs need auth, update `launch-browser.bat` with the blocked URLs and launch it:
    ```bash
    python -c "
    urls = ['<url1>', '<url2>']
@@ -104,10 +104,11 @@ Process an email PDF — runs intake, scouts all application pages, and produces
    with open('launch-browser.bat', 'w') as f:
        f.write(bat)
    "
+   cmd.exe /c launch-browser.bat
    ```
    Then report:
    ```
-   Auth required for N jobs. Run launch-browser.bat to open them in Chrome.
+   Auth required for N jobs. Chrome has been opened to the blocked pages.
    Complete any login or verification challenges, close Chrome, then run /continue.
    ```
 
@@ -178,7 +179,7 @@ Supports `--dry-run` flag: completes all form filling but stops before final sub
    - `blocked` — collect the blocked URL (`progress.page_url` from task.json) for the blocked URL list. Report: "[company] is blocked: [reason]."
    - `failed` — report failure: "[company] failed: [error]."
 
-8. **Report final summary.** If any jobs are blocked, update `launch-browser.bat` with their URLs (same pattern as `/apply` step 9) and report: "N jobs blocked. Run `launch-browser.bat` to open them, resolve the issues, close Chrome, then run `/continue`."
+8. **Report final summary.** If any jobs are blocked, update `launch-browser.bat` with their URLs and launch it (same pattern as `/apply` step 9), then report: "N jobs blocked. Chrome has been opened to the blocked pages. Resolve the issues, close Chrome, then run `/continue`."
    ```
    Submission complete.
 
@@ -258,7 +259,7 @@ Resume a blocked or auth-required agent after manual intervention (e.g., user lo
    python scripts/manage_task_state.py batch-status
    ```
 2. If no tasks need continuing, report: "No blocked or auth-required tasks found."
-3. If there are tasks needing continuing, update `launch-browser.bat` with their URLs (same pattern as `/apply` step 9) so the user can resolve any remaining challenges. Process them one at a time, starting with the first.
+3. If there are tasks needing continuing, update `launch-browser.bat` with their URLs and launch it (same pattern as `/apply` step 9). Then report: "Chrome has been opened to the blocked pages. Resolve any challenges, close Chrome, then confirm ready." Wait for user confirmation before proceeding. Process them one at a time, starting with the first.
 4. **For an `auth_required` task:** re-dispatch the scout subagent (the persistent Chrome profile now has the auth cookies):
    ```bash
    claude -p "$(cat agents/scout.md) TASK_DIR=tasks/<job_id> CONFIG_PATH=config.json"
