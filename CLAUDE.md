@@ -109,11 +109,80 @@ Read completed questionnaire answers from Obsidian, run application agents seque
 
 Supports `--dry-run` flag: completes all form filling but stops before final submit click.
 
-> **Not yet implemented** — coming in Phase 3.
+**Implementation:**
+
+1. **Find the questionnaire file.** Read config.json for the Obsidian output path, then find the most recent `YYYY-MM-DD Applications.md` file:
+   ```bash
+   ls "$(python -c "import json; print(json.load(open('config.json'))['obsidian_output_path'])")"
+   ```
+   Use the most recent file (or the one matching the current batch date).
+
+2. **Parse the questionnaire:**
+   ```bash
+   python scripts/parse_questionnaire.py --input "<path to questionnaire>"
+   ```
+   This returns JSON with each job's answers, readiness status, and any structural errors.
+
+3. **Report readiness:**
+   ```
+   Submission check:
+
+   | # | Company | Role | Ready | Issues |
+   |---|---------|------|-------|--------|
+   | 1 | ... | ... | Yes/No | missing answers / structural errors |
+   ```
+   If no jobs are ready, report the issues and stop.
+
+4. **Transition ready jobs** from `awaiting_answers` to `ready_to_apply`:
+   ```bash
+   python scripts/manage_task_state.py transition --job-id <job_id> --status ready_to_apply --last-agent orchestrator
+   ```
+
+5. **Determine the ATS skill file** for each job. Read the scout report's `ats_platform`:
+   - If a platform-specific skill exists at `skills/ats/<platform>.md`, use it
+   - Otherwise, use `skills/ats/generic.md`
+
+6. **Dispatch application subagents sequentially** for each ready job:
+   ```bash
+   claude -p "$(cat agents/application.md) TASK_DIR=tasks/<job_id> PROFILE_PATH=profile.json CONFIG_PATH=config.json SKILL_FILE=<skill_path> ANSWERS='<answers JSON>' DRY_RUN=<true|false>"
+   ```
+
+   **Pacing:** Between application subagent invocations, respect the submission delay from config.json:
+   ```bash
+   python -c "
+   import json, time
+   cfg = json.load(open('config.json'))
+   delay = cfg['pacing']['submission_delay_seconds']
+   # Check for domain override (compare consecutive ATS domains)
+   print(f'Waiting {delay} seconds between submissions...')
+   time.sleep(delay)
+   "
+   ```
+   If consecutive jobs target the same ATS domain, check `pacing.domain_overrides` for a longer delay.
+
+7. **After each application subagent completes**, read the task status:
+   - `submitted` — report success
+   - `blocked` — report blocker: "[company] is blocked: [reason]. Solve manually and run `/continue`."
+   - `failed` — report failure: "[company] failed: [error]."
+
+8. **Report final summary:**
+   ```
+   Submission complete.
+
+   | # | Company | Role | Outcome | Notes |
+   |---|---------|------|---------|-------|
+   | 1 | ... | ... | submitted/blocked/failed | ... |
+   ```
+   If any jobs are blocked, remind user to run `/continue` after resolving.
+
+**Error handling:**
+- If the questionnaire file is not found, report: "No questionnaire found. Run `/apply` first."
+- If the parser reports structural errors for a job, skip that job and report the errors.
+- If an application subagent fails or times out, report the error and continue with remaining jobs.
 
 ### `/continue`
 
-Resume a blocked or auth-required agent after manual intervention (e.g., user logged in via `launch-browser.bat`).
+Resume a blocked or auth-required agent after manual intervention (e.g., user logged in via `launch-browser.bat`, solved a CAPTCHA).
 
 **Implementation:**
 
@@ -122,19 +191,74 @@ Resume a blocked or auth-required agent after manual intervention (e.g., user lo
    python scripts/manage_task_state.py batch-status
    ```
 2. If no tasks need continuing, report: "No blocked or auth-required tasks found."
-3. For an `auth_required` task: re-dispatch the scout subagent (the persistent Chrome profile now has the auth cookies):
+3. **For an `auth_required` task:** re-dispatch the scout subagent (the persistent Chrome profile now has the auth cookies):
    ```bash
    claude -p "$(cat agents/scout.md) TASK_DIR=tasks/<job_id> CONFIG_PATH=config.json"
    ```
    After scouting succeeds, check if this was the last job needing scouting. If all jobs are now scouted, generate the questionnaire (same as `/apply` step 7).
-4. For a `blocked` task (Phase 3): re-dispatch the application subagent with the progress data from task.json.
+4. **For a `blocked` task:** read the progress and answers, then re-dispatch the application subagent:
+   ```bash
+   # Read task to get progress data
+   python scripts/manage_task_state.py read --job-id <job_id>
+   ```
+   Extract the `progress` field from task.json. Find the questionnaire and re-parse answers for this job:
+   ```bash
+   python scripts/parse_questionnaire.py --input "<questionnaire path>" --job-id <job_id>
+   ```
+   Build the answers dict from parsed fields. Determine the ATS skill file. Re-dispatch:
+   ```bash
+   claude -p "$(cat agents/application.md) TASK_DIR=tasks/<job_id> PROFILE_PATH=profile.json CONFIG_PATH=config.json SKILL_FILE=<skill_path> ANSWERS='<answers JSON>' DRY_RUN=false RESUME_FROM='<progress JSON>'"
+   ```
+   **Important:** The application agent re-fills all fields from the beginning — ATS forms don't retain data across sessions. The progress data tells the agent which page to navigate to and provides context about the previous attempt.
 5. Report the result and updated status.
 
 ### `/debrief`
 
 Review post-application findings and suggested learnings from the most recent batch.
 
-> **Not yet implemented** — coming in Phase 3.
+**Implementation:**
+
+1. **Find debriefs.** Get the most recent batch, then check each task directory for `debrief.md`:
+   ```bash
+   python scripts/manage_task_state.py batch-status
+   ```
+   For each task in the batch, check if `tasks/<job_id>/debrief.md` exists.
+
+2. **If no debriefs found:** report "No debriefs found for the current batch."
+
+3. **Present batch summary:**
+   ```
+   Debrief Summary — Batch YYYY-MM-DD
+
+   | # | Company | Role | Outcome | Key Issue |
+   |---|---------|------|---------|-----------|
+   | 1 | ... | ... | submitted | none |
+   | 2 | ... | ... | blocked | CAPTCHA on page 2 |
+   ```
+
+4. **For each debrief, categorize the observations** into triage categories:
+   - **Skill updates** (orchestrator can apply via `/skill`): ATS navigation patterns, field layout knowledge, timing/delay recommendations, answer rule additions
+   - **Script updates** (build agent needed via PR): new form element types, parser improvements, selector strategy changes
+   - **One-offs** (no action): observations specific to a single application
+
+5. **Present actionable items:**
+   ```
+   Actionable Items:
+
+   Skill updates (apply with /skill):
+   1. [suggestion from debrief] — from Company debrief
+   2. [suggestion] — from Company debrief
+
+   Script updates (need build agent PR):
+   1. [suggestion] — from Company debrief
+   ```
+
+6. **Allow drill-down:** If the user wants details on a specific debrief, read and display the full `debrief.md` file:
+   ```bash
+   cat tasks/<job_id>/debrief.md
+   ```
+
+The user can specify a job: `/debrief company-name` to see a specific debrief directly.
 
 ### `/skill <update instructions>`
 
