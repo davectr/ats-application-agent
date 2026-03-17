@@ -236,22 +236,38 @@ Review post-application findings and suggested learnings from the most recent ba
    | 2 | ... | ... | blocked | CAPTCHA on page 2 |
    ```
 
-4. **For each debrief, categorize the observations** into triage categories:
-   - **Skill updates** (orchestrator can apply via `/skill`): ATS navigation patterns, field layout knowledge, timing/delay recommendations, answer rule additions
-   - **Script updates** (build agent needed via PR): new form element types, parser improvements, selector strategy changes
-   - **One-offs** (no action): observations specific to a single application
+4. **For each debrief, read and triage every observation.** Read the debrief file:
+   ```bash
+   cat tasks/<job_id>/debrief.md
+   ```
+   Categorize each observation from the debrief sections into one of four triage categories:
 
-5. **Present actionable items:**
+   **Triage rules:**
+   - **Skill updates** (orchestrator can apply via `/skill`): items from "Platform Learnings" and "Suggested Skill Updates" sections — ATS navigation patterns, field layout knowledge, timing/delay recommendations, platform-specific quirks. These go into `skills/ats/<platform>.md`.
+   - **Answer rules** (orchestrator can apply via `/skill`): items from "Suggested Skill Updates" that describe recurring question patterns with consistent answers (e.g., "always answer 'years of experience' with '18+ years'"). These go into `profile.json` `answer_rules`.
+   - **Script updates** (build agent needed via PR): items from "Suggested Script Updates" — new form element types the filling script doesn't handle, parser improvements, new selector strategies, new automation patterns. Flag these for the user to create a build agent issue.
+   - **One-offs** (no action needed): items from "One-Off Observations" and "Failures / Issues" that are specific to this single application and unlikely to recur.
+
+5. **Present triage results with numbered items:**
    ```
    Actionable Items:
 
-   Skill updates (apply with /skill):
-   1. [suggestion from debrief] — from Company debrief
-   2. [suggestion] — from Company debrief
+   Skill updates (apply with `/skill Apply suggestion N from <company> debrief`):
+   1. [observation] — from <Company> debrief — target: skills/ats/<platform>.md
+   2. [observation] — from <Company> debrief — target: skills/ats/<platform>.md
+
+   Answer rules (apply with `/skill`):
+   3. [pattern → answer] — from <Company> debrief — target: profile.json answer_rules
+   4. [pattern → answer] — from <Company> debrief — target: profile.json answer_rules
 
    Script updates (need build agent PR):
-   1. [suggestion] — from Company debrief
+   5. [recommendation] — from <Company> debrief — target: scripts/<script>.py
+
+   One-offs (no action):
+   - [observation] — from <Company> debrief
    ```
+
+   **Numbering is global across the batch** — if there are 3 debriefs with suggestions, number them sequentially so the user can reference by number: `/skill Apply suggestion 3 from the Acme debrief`.
 
 6. **Allow drill-down:** If the user wants details on a specific debrief, read and display the full `debrief.md` file:
    ```bash
