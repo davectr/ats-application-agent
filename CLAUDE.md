@@ -175,6 +175,60 @@ Supports `--dry-run` flag: completes all form filling but stops before final sub
    ```
    If any jobs are blocked, remind user to run `/continue` after resolving.
 
+9. **Process Save Rule tags.** After all submissions complete, scan the parsed questionnaire output for `save_rule` fields. The parser output includes `save_rule: "always"` or `save_rule: "never"` on fields where the user tagged them.
+
+   **For `Save Rule: always`** — propose a new answer rule:
+   - Read the field's `label` and `answer` from the parsed questionnaire
+   - Construct a candidate answer rule:
+     ```json
+     {
+       "pattern": "<regex derived from the question label>",
+       "answer": "<the user's answer>",
+       "type": "<field type>"
+     }
+     ```
+   - Present the proposed rule to the user:
+     ```
+     Save Rule proposed:
+     Pattern: "<pattern>"
+     Answer: "<answer>"
+     Type: <type>
+
+     Add this rule to profile.json? (yes/no/edit)
+     ```
+   - If approved, add to `profile.json` `answer_rules`:
+     ```bash
+     python -c "
+     import json
+     with open('profile.json', 'r') as f:
+         profile = json.load(f)
+     profile['answer_rules'].append(<rule dict>)
+     with open('profile.json', 'w') as f:
+         json.dump(profile, f, indent=2, ensure_ascii=False)
+         f.write('\n')
+     "
+     ```
+   - If the user says "edit", let them modify the pattern or answer before saving.
+
+   **For `Save Rule: never`** — add to always-ask list:
+   - Read the field's `label` from the parsed questionnaire
+   - Derive a pattern from the label (lowercase, extract key phrases)
+   - Add to `profile.json` `always_ask`:
+     ```bash
+     python -c "
+     import json
+     with open('profile.json', 'r') as f:
+         profile = json.load(f)
+     profile['always_ask'].append('<pattern>')
+     with open('profile.json', 'w') as f:
+         json.dump(profile, f, indent=2, ensure_ascii=False)
+         f.write('\n')
+     "
+     ```
+   - Report: "Added '<pattern>' to always-ask list. This question will always appear in future questionnaires."
+
+   **If no Save Rule tags found**, skip this step silently.
+
 **Error handling:**
 - If the questionnaire file is not found, report: "No questionnaire found. Run `/apply` first."
 - If the parser reports structural errors for a job, skip that job and report the errors.
