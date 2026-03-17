@@ -133,13 +133,30 @@
 
 ---
 
+## Phase 11: Multi-Batch — PASS (all 4 tests)
+
+| Test | Description | Result | Notes |
+|------|------------|--------|-------|
+| T11.1 | Second batch intake (sample-email-2.pdf, 3 jobs) | PASS | BoomPop, Roadpass Digital, Raytheon — separate dirs, no batch 1 interference |
+| T11.2 | Batch status default (most recent) | PASS | Returns 2026-03-19 batch (6 jobs), not older batches |
+| T11.3 | Batch status with date filter | PASS | `--batch-date 2026-03-16` returns only batch 1 (4 jobs) |
+| T11.4 | Third + fourth batch intake (email-3: 3 jobs, email-4: 6 jobs) | PASS | 16 total jobs across 4 batches: 4 + 3 + 3 + 6 |
+
+**Verified:**
+- Batch isolation: each batch uses its own date prefix, no cross-contamination
+- Default batch-status returns most recent batch (2026-03-19)
+- Date-filtered batch-status correctly scopes to specified date
+- All 16 jobs from 4 PDFs parsed with correct company/title extraction
+- Task directories created independently per batch
+
+---
+
 ## Phases Not Yet Tested
 
 | Phase | Reason |
 |-------|--------|
 | Phase 8: Live Submission | Requires user decision on which jobs to submit |
 | Phase 9: Debrief | Depends on Phase 8 completion |
-| Phase 11: Multi-Batch | Requires second batch of email PDFs |
 
 ---
 
