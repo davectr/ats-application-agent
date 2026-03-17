@@ -31,10 +31,12 @@ from launch_browser import load_config, launch_persistent_context
 ATS_PATTERNS = {
     "workday": ["myworkdayjobs.com", "wd1.myworkdayjobs.com", "wd5.myworkdayjobs.com", "workday.com"],
     "greenhouse": ["boards.greenhouse.io", "greenhouse.io"],
+    "indeed_smart_apply": ["smartapply.indeed.com"],
     "lever": ["lever.co", "jobs.lever.co"],
     "icims": ["icims.com", "careers-", ".icims."],
     "taleo": ["taleo.net", "oracle.com/taleo"],
     "workable": ["workable.com", "apply.workable.com"],
+    "paycom": ["paycomonline.net"],
     "bamboohr": ["bamboohr.com"],
     "jazz": ["applytojob.com"],
     "ashby": ["ashbyhq.com"],
@@ -111,6 +113,24 @@ def check_page_status(page) -> dict:
         listing_status: "open" | "expired" | "requires_account" | "sso_apply_only"
         auth_required: bool
     """
+    # Check for Cloudflare challenge (title-based detection)
+    try:
+        title = page.title().lower()
+    except Exception:
+        title = ""
+    if "just a moment" in title or "attention required" in title:
+        # Cloudflare Turnstile or similar challenge page
+        return {"listing_status": "requires_account", "auth_required": True}
+
+    # Also check for Cloudflare challenge iframe
+    try:
+        frames = page.frames
+        for frame in frames:
+            if "challenges.cloudflare.com" in frame.url:
+                return {"listing_status": "requires_account", "auth_required": True}
+    except Exception:
+        pass
+
     try:
         body_text = page.inner_text("body").lower()
     except Exception:
@@ -124,6 +144,21 @@ def check_page_status(page) -> dict:
     # Check for auth wall
     for indicator in AUTH_WALL_INDICATORS:
         if indicator in body_text:
+            return {"listing_status": "requires_account", "auth_required": True}
+
+    # Check for Workday sign-in page (shows "Sign In" prominently with no form)
+    try:
+        current_url = page.url.lower()
+    except Exception:
+        current_url = ""
+    if "myworkdayjobs.com" in current_url:
+        # Workday pages that show "Sign In" without any visible form fields
+        # indicate the application requires account creation
+        form_fields = page.query_selector_all(
+            "input[type='text'], input[type='email'], textarea, select"
+        )
+        visible_fields = [f for f in form_fields if f.is_visible()]
+        if not visible_fields and "sign in" in body_text:
             return {"listing_status": "requires_account", "auth_required": True}
 
     # Check for SSO-only apply (only if no traditional form is present)
@@ -249,6 +284,16 @@ def _get_label(page, element) -> str:
     return ""
 
 
+def _clean_label(label: str) -> str:
+    """Clean label text: strip required indicators, extra whitespace, etc."""
+    import re as _re
+    # Remove trailing required indicators: *, \u2009*, \n\u2009*, etc.
+    label = _re.sub(r"[\s\u2009\u00a0]*\*\s*$", "", label)
+    # Collapse internal whitespace/newlines
+    label = _re.sub(r"\s+", " ", label).strip()
+    return label
+
+
 def _is_required(element) -> bool:
     """Check if a form element is required."""
     if element.get_attribute("required") is not None:
@@ -311,7 +356,7 @@ def _extract_input_field(page, element, counter: int) -> dict | None:
     if _is_hidden(element):
         return None
 
-    label = _get_label(page, element)
+    label = _clean_label(_get_label(page, element))
     if not label:
         return None
 
@@ -331,7 +376,7 @@ def _extract_textarea_field(page, element, counter: int) -> dict | None:
     if _is_hidden(element):
         return None
 
-    label = _get_label(page, element)
+    label = _clean_label(_get_label(page, element))
     if not label:
         return None
 
@@ -349,7 +394,7 @@ def _extract_select_field(page, element, counter: int) -> dict | None:
     if _is_hidden(element):
         return None
 
-    label = _get_label(page, element)
+    label = _clean_label(_get_label(page, element))
     if not label:
         return None
 
@@ -378,7 +423,7 @@ def _extract_file_field(page, element, counter: int) -> dict | None:
     if _is_hidden(element):
         return None
 
-    label = _get_label(page, element)
+    label = _clean_label(_get_label(page, element))
     if not label:
         label = "Resume"  # Common default for file inputs
 
@@ -397,7 +442,7 @@ def _extract_checkbox_field(page, element, counter: int) -> dict | None:
     if _is_hidden(element):
         return None
 
-    label = _get_label(page, element)
+    label = _clean_label(_get_label(page, element))
     if not label:
         return None
 
@@ -430,14 +475,14 @@ def _extract_radio_field(page, elements: list, counter: int, group_name: str) ->
         return None
 
     # Use the first element for label detection
-    label = _get_label(page, visible_els[0])
+    label = _clean_label(_get_label(page, visible_els[0]))
     if not label:
         label = group_name
 
     # Extract option labels
     options = []
     for el in visible_els:
-        opt_label = _get_label(page, el)
+        opt_label = _clean_label(_get_label(page, el))
         value = el.get_attribute("value")
         options.append(opt_label or value or "")
 
@@ -462,22 +507,31 @@ def capture_screenshot(page, screenshots_dir: Path, name: str) -> str:
     return f"screenshots/{filename}"
 
 
-def find_apply_button(page) -> bool:
-    """Look for an 'Apply' button on the page and click it.
+def _click_modal_button(page) -> bool:
+    """Click common ATS modal buttons (Apply Manually, Continue, etc.).
 
-    Returns True if an apply button was found and clicked.
+    These appear as intermediate steps between the job listing and the
+    actual application form — especially on Workday, Greenhouse, and iCIMS.
+
+    Returns True if a modal button was found and clicked.
     """
-    apply_selectors = [
-        "a:has-text('Apply')",
-        "button:has-text('Apply')",
-        "a:has-text('Apply Now')",
-        "button:has-text('Apply Now')",
-        "a:has-text('Apply for this job')",
-        "button:has-text('Apply for this job')",
-        "[data-testid*='apply']",
+    modal_selectors = [
+        # Workday "Start Your Application" modal
+        "a:has-text('Apply Manually')",
+        "button:has-text('Apply Manually')",
+        # Generic continue / proceed buttons
+        "a:has-text('Continue')",
+        "button:has-text('Continue')",
+        "a:has-text('Start Application')",
+        "button:has-text('Start Application')",
+        "a:has-text('Start your application')",
+        "button:has-text('Start your application')",
+        # iCIMS / others
+        "a:has-text('I Accept')",
+        "button:has-text('I Accept')",
     ]
 
-    for selector in apply_selectors:
+    for selector in modal_selectors:
         try:
             el = page.query_selector(selector)
             if el and el.is_visible():
@@ -488,6 +542,65 @@ def find_apply_button(page) -> bool:
             continue
 
     return False
+
+
+def find_apply_button(page, context):
+    """Look for an 'Apply' button on the page and click it.
+
+    Returns the page to use for field extraction:
+    - A new Page object if the click opened a new tab
+    - The same page if it navigated in-place
+    - None if no apply button was found
+
+    Args:
+        page: The current Playwright page.
+        context: The browser context (to detect new tabs/popups).
+    """
+    apply_selectors = [
+        # Indeed-specific patterns
+        "a:has-text('Apply on company')",
+        "button:has-text('Apply on company')",
+        "a:has-text('Apply now')",
+        "button:has-text('Apply now')",
+        # Generic patterns
+        "a:has-text('Apply')",
+        "button:has-text('Apply')",
+        "a:has-text('Apply for this job')",
+        "button:has-text('Apply for this job')",
+        # Data attribute patterns
+        "[data-testid*='apply']",
+        "[data-testid*='Apply']",
+        "[id*='applyButton']",
+        "[class*='apply-button']",
+        # ZipRecruiter-specific
+        "a:has-text('Apply on Company Site')",
+        "button:has-text('Apply on Company Site')",
+        # Greenhouse / Lever
+        "a:has-text('Apply for this Job')",
+        "#apply-now",
+        ".postings-btn-wrapper a",
+    ]
+
+    for selector in apply_selectors:
+        try:
+            el = page.query_selector(selector)
+            if el and el.is_visible():
+                pages_before = len(context.pages)
+                # Try to catch a new tab opening
+                try:
+                    with context.expect_page(timeout=5000) as new_page_info:
+                        el.click()
+                    new_page = new_page_info.value
+                    new_page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    return new_page
+                except PwTimeout:
+                    # No new tab — click navigated in-place
+                    page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    return page
+        except (PwTimeout, Exception):
+            continue
+
+    return None
 
 
 def scout_job(task_dir: str, config_path: str) -> dict:
@@ -564,21 +677,76 @@ def scout_job(task_dir: str, config_path: str) -> dict:
                 report["ats_platform"] = ats
 
             # Step 4: Try to find and click "Apply" button
-            current_url = page.url
-            if find_apply_button(page):
-                new_url = page.url
-                if new_url != current_url:
+            # find_apply_button returns a Page (possibly new tab) or None
+            pre_apply_url = page.url  # Save URL before click for comparison
+            apply_result = find_apply_button(page, context)
+            if apply_result is not None:
+                # Switch to the page returned (may be a new tab or same page)
+                active_page = apply_result
+                new_url = active_page.url
+                if new_url != pre_apply_url or active_page is not page:
                     print(f"  Followed apply link to: {new_url}")
-                    # Wait for new page to render
-                    page.wait_for_timeout(3000)
-                    capture_screenshot(page, screenshots_dir, "scout-step2-apply-click")
+                    # Wait for page to render (redirects may still be in flight)
+                    active_page.wait_for_timeout(3000)
+                    # Re-read URL after wait — redirects (e.g., ZipRecruiter → Workday) resolve here
+                    final_url = active_page.url
+                    if final_url != new_url:
+                        print(f"  Redirected to: {final_url}")
+                    # Extra wait for Workday's heavy JS rendering
+                    if detect_ats_platform(final_url) == "workday":
+                        active_page.wait_for_timeout(5000)
+                    capture_screenshot(active_page, screenshots_dir, "scout-step2-apply-click")
 
-                    # Re-detect ATS from new URL
-                    new_ats = detect_ats_platform(new_url)
+                    # Detect ATS from final URL (after redirects)
+                    new_ats = detect_ats_platform(final_url)
                     if new_ats:
                         report["ats_platform"] = new_ats
 
                     # Re-check status after navigation
+                    status = check_page_status(active_page)
+                    if status["listing_status"] != "open":
+                        report["listing_status"] = status["listing_status"]
+                        report["auth_required"] = status["auth_required"]
+                        report["application_url"] = active_page.url
+                        _write_report(report, task_path)
+                        return report
+
+                # Use the active page for field extraction
+                page = active_page
+
+            report["application_url"] = page.url
+
+            # Step 4b: Multi-click navigation to reach the application form.
+            # Job boards often require: listing → ATS page → modal → form.
+            # Try up to 2 additional clicks to drill through to the form.
+            for attempt in range(2):
+                test_fields = extract_fields(page)
+                if test_fields:
+                    break  # Found form fields, stop clicking
+
+                print(f"  No form fields found — trying click {attempt + 2}...")
+
+                # Try ATS modal buttons first, then generic apply buttons
+                clicked = _click_modal_button(page)
+                if not clicked:
+                    next_result = find_apply_button(page, context)
+                    if next_result is not None:
+                        page = next_result
+
+                new_url_n = page.url
+                if clicked or next_result:
+                    print(f"  After click: {new_url_n[:80]}")
+                    wait_ms = 8000 if detect_ats_platform(new_url_n) == "workday" else 3000
+                    page.wait_for_timeout(wait_ms)
+                    capture_screenshot(page, screenshots_dir, f"scout-step{attempt + 3}-click")
+                    report["application_url"] = page.url
+
+                    # Re-detect ATS
+                    new_ats_n = detect_ats_platform(new_url_n)
+                    if new_ats_n:
+                        report["ats_platform"] = new_ats_n
+
+                    # Re-check status
                     status = check_page_status(page)
                     if status["listing_status"] != "open":
                         report["listing_status"] = status["listing_status"]
@@ -586,11 +754,32 @@ def scout_job(task_dir: str, config_path: str) -> dict:
                         report["application_url"] = page.url
                         _write_report(report, task_path)
                         return report
-
-            report["application_url"] = page.url
+                else:
+                    break  # No clickable elements found, stop
 
             # Step 5: Extract form fields from the current page
             fields = extract_fields(page)
+
+            # Step 5b: Check if we landed on an account creation / login page
+            # instead of the actual application form. Password fields are the
+            # strongest signal — real application forms don't ask for passwords.
+            password_fields = [f for f in fields if f["type"] == "password"]
+            if password_fields:
+                print("  Detected account creation/login page (password fields found)")
+                page_screenshot = capture_screenshot(page, screenshots_dir, "scout-page1")
+                report["listing_status"] = "requires_account"
+                report["auth_required"] = True
+                report["application_url"] = page.url
+                report["pages"].append({
+                    "page_number": 1,
+                    "url": page.url,
+                    "screenshot": page_screenshot,
+                    "fields": [],  # Don't include auth fields in report
+                })
+                report["page_count"] = 1
+                _write_report(report, task_path)
+                return report
+
             page_screenshot = capture_screenshot(page, screenshots_dir, "scout-page1")
 
             page_data = {

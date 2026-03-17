@@ -5,3 +5,5 @@ test-data/
 *.pdf
 node_modules/
 *.log
+__pycache__/
+*.pyc

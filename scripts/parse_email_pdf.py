@@ -132,8 +132,15 @@ def parse_listing_block(block: str, job_number: int) -> dict:
         company = parts[0].strip()
         title = parts[1].strip()
     else:
-        company = first_line
-        title = ""
+        # Fallback: some PDFs use ", " as separator (e.g. "Pearl, Inc. , Director...")
+        # Split on the last ", " to handle company names containing commas
+        last_comma = first_line.rfind(", ")
+        if last_comma > 0:
+            company = first_line[:last_comma].strip()
+            title = first_line[last_comma + 2:].strip()
+        else:
+            company = first_line
+            title = ""
 
     # Join remaining lines for field extraction
     body = "\n".join(lines[1:])

@@ -73,7 +73,7 @@ Process an email PDF — runs intake, scouts all application pages, and produces
    ```
    Process jobs sequentially. After each scout completes, check the task status:
    - `scouted` — continue to next job
-   - `auth_required` — report to user: "Auth required for [company]. Log in via `launch-browser.bat`, close Chrome, then run `/continue`." Continue scouting remaining jobs.
+   - `auth_required` — collect the scout report's `application_url` for the blocked URL list. Report: "Auth required for [company]." Continue scouting remaining jobs.
    - `sso_apply_only` — report: "[company] requires SSO apply (LinkedIn/Indeed). Apply manually." Continue.
    - `listing_expired` — report: "[company] listing is closed. Skipping." Continue.
 7. **Questionnaire generation** — after all scouts complete, collect task dirs for all `scouted` tasks and generate the questionnaire:
@@ -96,7 +96,21 @@ Process an email PDF — runs intake, scouts all application pages, and produces
    |---|---------|------|--------|
    | 1 | ... | ... | awaiting_answers / auth_required / listing_expired / sso_apply_only |
    ```
-   If any jobs need auth: remind user to log in and run `/continue`.
+   If any jobs need auth, update `launch-browser.bat` with the blocked URLs and launch it:
+   ```bash
+   python -c "
+   urls = ['<url1>', '<url2>']
+   bat = '@echo off\nstart \"\" \"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" --user-data-dir=\"D:\\GitProjects\\ats-application-agent\\.chrome-profile\" ' + ' '.join(f'\"{u}\"' for u in urls) + '\n'
+   with open('launch-browser.bat', 'w') as f:
+       f.write(bat)
+   "
+   cmd.exe /c launch-browser.bat
+   ```
+   Then report:
+   ```
+   Auth required for N jobs. Chrome has been opened to the blocked pages.
+   Complete any login or verification challenges, close Chrome, then run /continue.
+   ```
 
 **Error handling:**
 - If the intake subagent fails, report the error and do not proceed to scouting.
@@ -162,10 +176,10 @@ Supports `--dry-run` flag: completes all form filling but stops before final sub
 
 7. **After each application subagent completes**, read the task status:
    - `submitted` — report success
-   - `blocked` — report blocker: "[company] is blocked: [reason]. Solve manually and run `/continue`."
+   - `blocked` — collect the blocked URL (`progress.page_url` from task.json) for the blocked URL list. Report: "[company] is blocked: [reason]."
    - `failed` — report failure: "[company] failed: [error]."
 
-8. **Report final summary:**
+8. **Report final summary.** If any jobs are blocked, update `launch-browser.bat` with their URLs and launch it (same pattern as `/apply` step 9), then report: "N jobs blocked. Chrome has been opened to the blocked pages. Resolve the issues, close Chrome, then run `/continue`."
    ```
    Submission complete.
 
@@ -245,12 +259,13 @@ Resume a blocked or auth-required agent after manual intervention (e.g., user lo
    python scripts/manage_task_state.py batch-status
    ```
 2. If no tasks need continuing, report: "No blocked or auth-required tasks found."
-3. **For an `auth_required` task:** re-dispatch the scout subagent (the persistent Chrome profile now has the auth cookies):
+3. If there are tasks needing continuing, update `launch-browser.bat` with their URLs and launch it (same pattern as `/apply` step 9). Then report: "Chrome has been opened to the blocked pages. Resolve any challenges, close Chrome, then confirm ready." Wait for user confirmation before proceeding. Process them one at a time, starting with the first.
+4. **For an `auth_required` task:** re-dispatch the scout subagent (the persistent Chrome profile now has the auth cookies):
    ```bash
    claude -p "$(cat agents/scout.md) TASK_DIR=tasks/<job_id> CONFIG_PATH=config.json"
    ```
    After scouting succeeds, check if this was the last job needing scouting. If all jobs are now scouted, generate the questionnaire (same as `/apply` step 7).
-4. **For a `blocked` task:** read the progress and answers, then re-dispatch the application subagent:
+5. **For a `blocked` task:** read the progress and answers, then re-dispatch the application subagent:
    ```bash
    # Read task to get progress data
    python scripts/manage_task_state.py read --job-id <job_id>
@@ -264,7 +279,15 @@ Resume a blocked or auth-required agent after manual intervention (e.g., user lo
    claude -p "$(cat agents/application.md) TASK_DIR=tasks/<job_id> PROFILE_PATH=profile.json CONFIG_PATH=config.json SKILL_FILE=<skill_path> ANSWERS='<answers JSON>' DRY_RUN=false RESUME_FROM='<progress JSON>'"
    ```
    **Important:** The application agent re-fills all fields from the beginning — ATS forms don't retain data across sessions. The progress data tells the agent which page to navigate to and provides context about the previous attempt.
-5. Report the result and updated status.
+6. After all blocked/auth tasks are processed, reset `launch-browser.bat` to its default (no URLs):
+   ```bash
+   python -c "
+   bat = '@echo off\nstart \"\" \"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" --user-data-dir=\"D:\\GitProjects\\ats-application-agent\\.chrome-profile\"\n'
+   with open('launch-browser.bat', 'w') as f:
+       f.write(bat)
+   "
+   ```
+7. Report the result and updated status.
 
 ### `/debrief`
 
