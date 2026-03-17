@@ -45,18 +45,21 @@ For a specific batch date, run: `python scripts/manage_task_state.py batch-statu
 
 ### `/apply <path>`
 
-Process an email PDF — runs intake and scout subagents, produces an Obsidian questionnaire.
+Process an email PDF — runs intake, scouts all application pages, and produces an Obsidian questionnaire.
 
 **Implementation:**
 
 1. Verify the PDF file exists at `<path>`. If not, report: "File not found: `<path>`"
 2. Determine today's date for the batch: `BATCH_DATE=$(date +%Y-%m-%d)`
-3. Dispatch the intake subagent:
+3. **Intake phase** — dispatch the intake subagent:
    ```bash
    claude -p "$(cat agents/intake.md) EMAIL_PDF=<path> BATCH_DATE=$BATCH_DATE"
    ```
-4. After intake completes, run `/status` to show the user what was created.
-5. Report the batch summary:
+4. After intake completes, run batch-status to identify all `intake_complete` tasks:
+   ```bash
+   python scripts/manage_task_state.py batch-status --batch-date $BATCH_DATE
+   ```
+5. Report intake results:
    ```
    Intake complete: N jobs parsed from <path>
 
@@ -64,12 +67,41 @@ Process an email PDF — runs intake and scout subagents, produces an Obsidian q
    |---|---------|------|--------|--------|
    | 1 | ... | ... | OK/FAILED | intake_complete |
    ```
-6. Notify the user that scouting is the next step:
-   > "Scout phase not yet implemented (Phase 2b). Tasks are in `intake_complete` status, ready for scouting once Phase 2b is built."
+6. **Scout phase** — for each task in `intake_complete` status, dispatch the scout subagent:
+   ```bash
+   claude -p "$(cat agents/scout.md) TASK_DIR=tasks/<job_id> CONFIG_PATH=config.json"
+   ```
+   Process jobs sequentially. After each scout completes, check the task status:
+   - `scouted` — continue to next job
+   - `auth_required` — report to user: "Auth required for [company]. Log in via `launch-browser.bat`, close Chrome, then run `/continue`." Continue scouting remaining jobs.
+   - `sso_apply_only` — report: "[company] requires SSO apply (LinkedIn/Indeed). Apply manually." Continue.
+   - `listing_expired` — report: "[company] listing is closed. Skipping." Continue.
+7. **Questionnaire generation** — after all scouts complete, collect task dirs for all `scouted` tasks and generate the questionnaire:
+   ```bash
+   python scripts/generate_questionnaire.py \
+     --task-dirs "tasks/<job_id_1>,tasks/<job_id_2>,..." \
+     --profile profile.json \
+     --config config.json
+   ```
+8. Transition all `scouted` tasks to `awaiting_answers`:
+   ```bash
+   python scripts/manage_task_state.py transition --job-id <job_id> --status awaiting_answers --last-agent orchestrator
+   ```
+   Note: first transition each from `scouted` → `awaiting_answers`.
+9. Report final summary:
+   ```
+   Scouting complete. Questionnaire generated in Obsidian.
+
+   | # | Company | Role | Status |
+   |---|---------|------|--------|
+   | 1 | ... | ... | awaiting_answers / auth_required / listing_expired / sso_apply_only |
+   ```
+   If any jobs need auth: remind user to log in and run `/continue`.
 
 **Error handling:**
-- If the intake subagent fails, report the error and do not proceed.
-- If some listings fail validation but others succeed, report partial results.
+- If the intake subagent fails, report the error and do not proceed to scouting.
+- If some listings fail validation but others succeed, report partial results and scout the successful ones.
+- If a scout subagent fails or times out, report the error for that job and continue with remaining jobs.
 
 ### `/submit`
 
@@ -81,9 +113,22 @@ Supports `--dry-run` flag: completes all form filling but stops before final sub
 
 ### `/continue`
 
-Resume a blocked agent after manual intervention (e.g., user logged in via `launch-browser.bat`).
+Resume a blocked or auth-required agent after manual intervention (e.g., user logged in via `launch-browser.bat`).
 
-> **Not yet implemented** — coming in Phase 2b.
+**Implementation:**
+
+1. Find the task that needs continuing. Check batch status for tasks in `auth_required` or `blocked` status:
+   ```bash
+   python scripts/manage_task_state.py batch-status
+   ```
+2. If no tasks need continuing, report: "No blocked or auth-required tasks found."
+3. For an `auth_required` task: re-dispatch the scout subagent (the persistent Chrome profile now has the auth cookies):
+   ```bash
+   claude -p "$(cat agents/scout.md) TASK_DIR=tasks/<job_id> CONFIG_PATH=config.json"
+   ```
+   After scouting succeeds, check if this was the last job needing scouting. If all jobs are now scouted, generate the questionnaire (same as `/apply` step 7).
+4. For a `blocked` task (Phase 3): re-dispatch the application subagent with the progress data from task.json.
+5. Report the result and updated status.
 
 ### `/debrief`
 
