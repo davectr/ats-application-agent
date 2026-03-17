@@ -264,7 +264,121 @@ The user can specify a job: `/debrief company-name` to see a specific debrief di
 
 Update an ATS skill file or answer rule based on debrief findings or freeform instruction.
 
-> **Not yet implemented** — coming in Phase 4.
+**Two modes:**
+
+#### Freeform Mode
+
+The user provides a natural language instruction. Examples:
+- `/skill Add a rule for "years of experience" questions: answer with "18+ years"`
+- `/skill Add "how did you hear about us" to always-ask list`
+- `/skill Create a Workday skill: URL pattern is myworkdayjobs.com, forms typically have 3-5 pages`
+
+**Implementation:**
+
+1. **Parse the instruction.** Determine the update type:
+   - **Answer rule** — instruction mentions adding a rule, pattern, or answer for a question type
+   - **Always-ask addition** — instruction mentions "always ask" or "never auto-answer"
+   - **ATS skill update** — instruction mentions a platform name, ATS behavior, or navigation pattern
+
+2. **For answer rules:** Read `profile.json`, construct a new rule object, add to `answer_rules` array, write back:
+   ```bash
+   python -c "
+   import json
+   with open('profile.json', 'r') as f:
+       profile = json.load(f)
+   # Construct the new rule from the user's instruction
+   new_rule = {
+       'pattern': '<regex pattern from instruction>',
+       'answer': '<answer from instruction>',
+       'type': '<field type if specified>'
+   }
+   # For conditional rules, use 'logic' array instead of 'answer'
+   # For skip-if-optional rules, use 'behavior': 'skip_if_optional'
+   profile['answer_rules'].append(new_rule)
+   with open('profile.json', 'w') as f:
+       json.dump(profile, f, indent=2, ensure_ascii=False)
+       f.write('\n')
+   print('Rule added successfully')
+   "
+   ```
+   Present the constructed rule to the user for confirmation before writing.
+
+3. **For always-ask additions:** Read `profile.json`, add the pattern to `always_ask`, write back:
+   ```bash
+   python -c "
+   import json
+   with open('profile.json', 'r') as f:
+       profile = json.load(f)
+   profile['always_ask'].append('<pattern>')
+   with open('profile.json', 'w') as f:
+       json.dump(profile, f, indent=2, ensure_ascii=False)
+       f.write('\n')
+   print('Pattern added to always-ask list')
+   "
+   ```
+
+4. **For ATS skill updates:**
+   - Check if `skills/ats/<platform>.md` exists
+   - If it does not exist, create it using this template:
+     ```markdown
+     # ATS Skill: <Platform Name>
+
+     ## Platform Identification
+     - URL pattern: `<url pattern>`
+
+     ## Navigation Flow
+     - <step-by-step description>
+
+     ## Known Field Patterns
+     - <field types and locations>
+
+     ## Common Issues
+     - <gotchas, failure modes, workarounds>
+
+     ## Revision History
+     - <date>: Initial skill created from <source>
+     ```
+   - If it exists, append the new knowledge to the relevant section
+   - Always add a revision history entry: `- <date>: <what was added/changed and source>`
+
+5. Report what was changed and confirm the update.
+
+#### Debrief-Guided Mode
+
+The user references a specific debrief suggestion. Examples:
+- `/skill Apply suggestion 2 from the Snap Finance debrief`
+- `/skill Apply all skill suggestions from the latest batch`
+
+**Implementation:**
+
+1. **Find the debrief.** If the user names a company, find the matching task directory and read `debrief.md`:
+   ```bash
+   # Find the task directory matching the company name
+   python scripts/manage_task_state.py batch-status
+   # Then read the debrief
+   cat tasks/<job_id>/debrief.md
+   ```
+
+2. **Identify the suggestion.** Look in the "Suggested Skill Updates" section of the debrief. Each suggestion is numbered (from the `/debrief` triage output).
+
+3. **Classify the suggestion:**
+   - If it's about ATS platform behavior → update skill file
+   - If it's about recurring question patterns → add answer rule
+   - If it's about which questions to always ask → add to always-ask list
+
+4. **Apply the change** using the same profile.json or skill file update approach as freeform mode.
+
+5. **Add revision history.** When updating an ATS skill file, add a revision entry linking to the source debrief:
+   ```
+   - <date>: <change description> (from <company> debrief, task <job_id>)
+   ```
+
+6. **Report the result** to the user, showing what was changed.
+
+**Error handling:**
+- If the referenced debrief or suggestion does not exist, report: "Could not find that debrief or suggestion."
+- If the update target is ambiguous, ask the user to clarify.
+- Always show the proposed change before applying it — require user confirmation.
 
 ---
 
