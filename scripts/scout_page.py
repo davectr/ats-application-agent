@@ -111,6 +111,24 @@ def check_page_status(page) -> dict:
         listing_status: "open" | "expired" | "requires_account" | "sso_apply_only"
         auth_required: bool
     """
+    # Check for Cloudflare challenge (title-based detection)
+    try:
+        title = page.title().lower()
+    except Exception:
+        title = ""
+    if "just a moment" in title or "attention required" in title:
+        # Cloudflare Turnstile or similar challenge page
+        return {"listing_status": "requires_account", "auth_required": True}
+
+    # Also check for Cloudflare challenge iframe
+    try:
+        frames = page.frames
+        for frame in frames:
+            if "challenges.cloudflare.com" in frame.url:
+                return {"listing_status": "requires_account", "auth_required": True}
+    except Exception:
+        pass
+
     try:
         body_text = page.inner_text("body").lower()
     except Exception:
@@ -466,15 +484,31 @@ def find_apply_button(page) -> bool:
     """Look for an 'Apply' button on the page and click it.
 
     Returns True if an apply button was found and clicked.
+    Uses case-insensitive text matching via regex for resilience.
     """
     apply_selectors = [
+        # Indeed-specific patterns
+        "a:has-text('Apply on company')",
+        "button:has-text('Apply on company')",
+        "a:has-text('Apply now')",
+        "button:has-text('Apply now')",
+        # Generic patterns
         "a:has-text('Apply')",
         "button:has-text('Apply')",
-        "a:has-text('Apply Now')",
-        "button:has-text('Apply Now')",
         "a:has-text('Apply for this job')",
         "button:has-text('Apply for this job')",
+        # Data attribute patterns
         "[data-testid*='apply']",
+        "[data-testid*='Apply']",
+        "[id*='applyButton']",
+        "[class*='apply-button']",
+        # ZipRecruiter-specific
+        "a:has-text('Apply on Company Site')",
+        "button:has-text('Apply on Company Site')",
+        # Greenhouse / Lever
+        "a:has-text('Apply for this Job')",
+        "#apply-now",
+        ".postings-btn-wrapper a",
     ]
 
     for selector in apply_selectors:
