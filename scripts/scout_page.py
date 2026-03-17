@@ -53,6 +53,12 @@ EXPIRED_INDICATORS = [
     "this position is no longer open",
     "application deadline has passed",
     "requisition is no longer active",
+    "sorry, but we can't find that page",
+    "this job posting is no longer active",
+    "page not found",
+    "the job you are looking for is no longer open",
+    "is no longer open",
+    "is no longer available",
 ]
 
 # Patterns indicating auth wall
@@ -63,6 +69,17 @@ AUTH_WALL_INDICATORS = [
     "sign in to continue",
     "please log in",
     "login required",
+    "additional verification required",
+    "verify you are human",
+    "please verify you are a human",
+    "complete the security check",
+    "performing security verification",
+    "verifies you are not a bot",
+    "protect against malicious bots",
+    "sign up or log in",
+    "create or log in to",
+    "you must create or log in",
+    "sign in to your account to apply",
 ]
 
 # Patterns indicating SSO-only apply
@@ -465,7 +482,7 @@ def find_apply_button(page) -> bool:
             el = page.query_selector(selector)
             if el and el.is_visible():
                 el.click()
-                page.wait_for_load_state("networkidle", timeout=15000)
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
                 return True
         except (PwTimeout, Exception):
             continue
@@ -525,7 +542,9 @@ def scout_job(task_dir: str, config_path: str) -> dict:
         try:
             # Step 1: Navigate to the job listing page
             print(f"Navigating to: {job_url}")
-            page.goto(job_url, wait_until="networkidle", timeout=30000)
+            page.goto(job_url, wait_until="domcontentloaded", timeout=30000)
+            # Wait for JS rendering — dynamic sites (Indeed, Workday) need time
+            page.wait_for_timeout(3000)
             screenshot_path = capture_screenshot(page, screenshots_dir, "scout-step1-listing")
             print(f"  Screenshot: {screenshot_path}")
 
@@ -550,6 +569,8 @@ def scout_job(task_dir: str, config_path: str) -> dict:
                 new_url = page.url
                 if new_url != current_url:
                     print(f"  Followed apply link to: {new_url}")
+                    # Wait for new page to render
+                    page.wait_for_timeout(3000)
                     capture_screenshot(page, screenshots_dir, "scout-step2-apply-click")
 
                     # Re-detect ATS from new URL
