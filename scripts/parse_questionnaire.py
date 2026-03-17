@@ -180,7 +180,10 @@ def parse_job_section(section: str) -> dict | None:
             answer = (field.get("answer") or "").strip()
             if not answer:
                 ready = False
-                break
+                errors.append(
+                    f"Required field '{field.get('label', 'unknown')}' "
+                    f"({field.get('field_id', '?')}) has no answer"
+                )
 
     return {
         "job_id": job_id,
@@ -277,16 +280,23 @@ def parse_needs_input_section(section: str) -> list[dict]:
             continue
 
         # New question starts with **Q
-        if stripped.startswith("**Q") and "<!-- field_id:" in stripped:
+        if stripped.startswith("**Q") and re.match(r"\*\*Q\d+:", stripped):
             # Save previous field
             if current_field:
                 fields.append(current_field)
 
             field_id = extract_comment(stripped, "field_id")
-            # Extract label from "**Q1: Label text** <!-- field_id: XX -->"
-            label_match = re.match(
-                r"\*\*Q\d+:\s*(.+?)\*\*\s*<!--", stripped
-            )
+
+            # Extract label — try with field_id comment first, then without
+            if field_id:
+                label_match = re.match(
+                    r"\*\*Q\d+:\s*(.+?)\*\*\s*<!--", stripped
+                )
+            else:
+                label_match = re.match(
+                    r"\*\*Q\d+:\s*(.+?)\*\*", stripped
+                )
+
             label = label_match.group(1).strip() if label_match else ""
 
             current_field = {
