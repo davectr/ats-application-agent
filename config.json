@@ -13,7 +13,7 @@
     "note": "Playwright must use launch_persistent_context with user_data_dir pointed at chrome_profile_path. Do not use browser.launch() or browser.new_context() — those create ephemeral profiles without saved cookies/sessions."
   },
   "url_classification": {
-    "job_listing_domains": ["indeed.com", "ziprecruiter.com", "linkedin.com", "lever.co", "boards.greenhouse.io"],
+    "job_listing_domains": ["indeed.com", "ziprecruiter.com", "linkedin.com", "lever.co", "greenhouse.io"],
     "resume_view_pattern": "docs.google.com/document/d/",
     "resume_download_pattern": "docs.google.com/document/export",
     "note": "Intake agent uses these patterns to classify URLs extracted from email PDFs. Add new job board domains here as they appear."

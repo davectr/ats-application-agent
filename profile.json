@@ -1,39 +1,71 @@
 {
   "contact": {
-    "first_name": "",
-    "last_name": "",
-    "email": "",
-    "phone": "",
-    "linkedin_url": "",
-    "city": "",
-    "state": "",
-    "zip": "",
+    "first_name": "Dave",
+    "last_name": "Fimek",
+    "email": "davectr@gmail.com",
+    "phone": "8153100006",
+    "linkedin_url": "https://www.linkedin.com/in/davefimek/",
+    "city": "Bourbonnais",
+    "state": "IL",
+    "zip": "60914",
     "country": "United States"
   },
   "demographics": {
-    "work_authorization": "",
-    "sponsorship_required": "",
-    "veteran_status": "",
-    "gender": "",
-    "race_ethnicity": "",
-    "disability": ""
+    "work_authorization": "U.S. Citizen",
+    "sponsorship_required": "None",
+    "veteran_status": "Veteran, not protected",
+    "gender": "Male",
+    "race_ethnicity": "White",
+    "disability": "None"
   },
   "education": [
     {
-      "institution": "",
-      "degree": "",
-      "field": "",
-      "graduation_year": ""
+      "institution": "Touro University",
+      "degree": "BSITM",
+      "field": "IT",
+      "graduation_year": "N/A"
     }
   ],
   "work_history": [
     {
-      "company": "",
-      "title": "",
-      "start_date": "",
-      "end_date": "",
+      "company": "Indegene",
+      "title": "Director of Analytics",
+      "start_date": "2023-09",
+      "end_date": "2024-11",
       "current": false,
-      "description": ""
+      "description": "Built and led a centralized Center of Excellence supporting analytics infrastructure for 9 pharmaceutical brands and 40+ digital properties. Developed innovative measurement frameworks. Enabled shift from weekly to near real-time campaign reporting."
+    },
+    {
+      "company": "Evolytics",
+      "title": "Director of Analytics",
+      "start_date": "2021-05",
+      "end_date": "2023-09",
+      "current": false,
+      "description": "Integrated online and offline data for a global client, reducing click-to-call CPA by 60%, saving $3M annually. Led customer journey analysis and A/B testing for Intuit QuickBooks. Oversaw a team of 20+ analytics consultants."
+    },
+    {
+      "company": "InfoTrust",
+      "title": "Lead Analytics Consultant",
+      "start_date": "2019-01",
+      "end_date": "2021-05",
+      "current": false,
+      "description": "Architected real-time analytics and AI-driven recommendation engines for enterprise clients in e-commerce and retail. Integrated GA360 analytics with CRM/CMS systems."
+    },
+    {
+      "company": "Cardinal Path (Merkle)",
+      "title": "Manager, Digital Intelligence",
+      "start_date": "2012-08",
+      "end_date": "2019-01",
+      "current": false,
+      "description": "Built and deployed BI dashboards for clients such as Papa Johns, Hyundai, and NASA. Developed engagement scoring systems and conversion funnel reports."
+    },
+    {
+      "company": "United States Navy",
+      "title": "Intelligence Analyst, Petty Officer Second Class",
+      "start_date": "2002-09",
+      "end_date": "2006-09",
+      "current": false,
+      "description": "Conducted multi-source intelligence analysis and operational briefings, supporting mission-critical decisions under high-pressure environments."
     }
   ],
   "answer_rules": [],
