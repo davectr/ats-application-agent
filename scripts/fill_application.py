@@ -181,6 +181,10 @@ def fill_application(
 
             # Check for CAPTCHA/auth wall before filling
             block = check_for_blockers(page)
+            if not block:
+                # Click through to the application form if needed
+                page = prepare_application_page(page, context)
+                result.page_url = page.url
             if block:
                 screenshot_name = "blocked-before-fill"
                 ss = capture_screenshot(page, screenshots_dir, screenshot_name)
@@ -519,6 +523,45 @@ def is_sensitive_field(label: str) -> bool:
         if re.search(pattern, label_lower):
             return True
     return False
+
+
+def prepare_application_page(page, context) -> "Page":
+    """Click through to the actual application form if needed.
+
+    Some ATS pages require clicking "Apply" or modal buttons to reveal
+    the form. This mirrors the scout_page.py apply-click logic.
+
+    Returns the page (possibly a new tab) where the form is visible.
+    """
+    # Import selectors from scout_page
+    from scout_page import find_apply_button, _click_modal_button
+
+    # Try up to 2 clicks to reach the form
+    for attempt in range(3):
+        # Check if we already have form fields
+        form_fields = page.query_selector_all(
+            "input[type='text'], input[type='email'], input[type='tel'], "
+            "input[type='number'], input[type='file'], textarea, select"
+        )
+        visible_fields = [f for f in form_fields if f.is_visible()]
+        if visible_fields:
+            return page  # Form is already visible
+
+        if attempt == 0:
+            print(f"  No form fields visible — clicking through to application form...")
+
+        # Try modal buttons first, then apply buttons
+        clicked = _click_modal_button(page)
+        if not clicked:
+            result = find_apply_button(page, context)
+            if result is not None:
+                page = result
+            elif attempt > 0:
+                break  # No buttons found after first attempt
+
+        page.wait_for_timeout(3000)
+
+    return page
 
 
 def click_next_page(page) -> bool:
