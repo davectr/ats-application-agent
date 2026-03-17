@@ -47,7 +47,29 @@ For a specific batch date, run: `python scripts/manage_task_state.py batch-statu
 
 Process an email PDF — runs intake and scout subagents, produces an Obsidian questionnaire.
 
-> **Not yet implemented** — coming in Phase 2a (intake) and Phase 2b (scout + questionnaire).
+**Implementation:**
+
+1. Verify the PDF file exists at `<path>`. If not, report: "File not found: `<path>`"
+2. Determine today's date for the batch: `BATCH_DATE=$(date +%Y-%m-%d)`
+3. Dispatch the intake subagent:
+   ```bash
+   claude -p "$(cat agents/intake.md) EMAIL_PDF=<path> BATCH_DATE=$BATCH_DATE"
+   ```
+4. After intake completes, run `/status` to show the user what was created.
+5. Report the batch summary:
+   ```
+   Intake complete: N jobs parsed from <path>
+
+   | # | Company | Role | Resume | Status |
+   |---|---------|------|--------|--------|
+   | 1 | ... | ... | OK/FAILED | intake_complete |
+   ```
+6. Notify the user that scouting is the next step:
+   > "Scout phase not yet implemented (Phase 2b). Tasks are in `intake_complete` status, ready for scouting once Phase 2b is built."
+
+**Error handling:**
+- If the intake subagent fails, report the error and do not proceed.
+- If some listings fail validation but others succeed, report partial results.
 
 ### `/submit`
 
